@@ -1,69 +1,190 @@
-# 🚢 KABOAT 2026 자율운항 알고리즘 프로젝트
+# 🚤 KABOAT-2026
 
-본 프로젝트는 라이다, IMU, GPS, 카메라를 활용하여 장애물 회피, 호핑 투어, 그리고 정밀 도킹 미션을 수행하는 자율운항 보트의 제어 알고리즘을 다룹니다.
-
-## 🛠 시스템 사양 및 구성
-* **사용 센서**: ①라이다 ②IMU ③GPS ④카메라
-* **사용 모터**: ①서보모터 ②쓰러스터
-* **좌표계 설정**: 그림 기준 위쪽(출발할 때 바라보는 방향)을 y축(0°), 오른쪽(배의 진행방향)을 x축(IMU 90°)으로 설정합니다.
+> **A ROS 2–based autonomous navigation and control framework for an Unmanned Surface Vehicle (USV), developed for the KABOAT 2026 competition.**
 
 ---
 
-## 🗺 전체 경기장 구성
-![전체 경기장 모습](./images/image01.png)
+## 🛠 System Configuration
+
+### 🔍 Sensors
+- **LiDAR** – Obstacle detection and environment mapping  
+- **IMU (Inertial Measurement Unit)** – Attitude and heading estimation  
+- **GPS (Global Positioning System)** – Global positioning and waypoint navigation  
+- **Vision Camera** – Object detection and visual perception  
+
+### ⚙️ Actuators
+- **Servo Motor** – Steering control  
+- **Thruster** – Propulsion control  
 
 ---
 
-## 📍 코스별 상세 알고리즘
+## 🧭 Coordinate Frame Definition
 
-### 1코스 알고리즘
-![1코스 알고리즘 시각화](./images/image02.png)
+To ensure consistent spatial representation across heterogeneous sensors, a unified coordinate framework is established.
 
-센서는 라이다, IMU, GPS, 카메라 모두 코드 실행 때부터 콜백시킨다(데이터를 받는다). 이때 매 프레임마다 서보모터의 목표 각도 결정은 다음의 우선순위를 따른다.
+### 🔄 Coordinate Frame Alignment & Fusion
+- **LiDAR data** are represented in the vessel-relative coordinate frame.  
+- **GPS and IMU data** are initially expressed in the global (absolute) reference frame.  
+- Global measurements are transformed into a **vessel-fixed coordinate system**, aligned with the **bow-referenced X-axis**.  
+- All sensor data are integrated into this unified frame, enabling robust spatial consistency and reliable sensor fusion.
 
-1. **GPS 목표 각도**를 따라 간다. (첫 번째 웨이포인트, 모든 부표 장애물을 지나고 호핑의 보라색 부표 앞 지점과 현재 배의 위치 사이 각도)
-2. 중간에 장애물을 **라이다가 특정 거리 이하로 인식**하면 안전 각도 중 GPS 목표 각도와 가장 가까운 각도를 선택한다.
+# 🏁 Competition Field Overview
 
-이때 라이다는 전방 180도 범위의 데이터를 선택해 180등분하고 한 등분 내의 데이터들 평균값을 1°에 할당시켜 총 180개 거리값 리스트를 다룬다(단위: m). 이 리스트를 특정 함수(예: $y = e^{-2.7x+1.5}$)에 넣어 거리가 가까워질수록 위험도 값(실수 0~100 사이값)이 높아지도록 설정해 도출된 위험도 값이 임계값을 넘으면 위험 각도로 판단하고 넘지 않으면 안전 각도로 판단한다.
+## 🌊 Overall Field Layout
+- Description of the complete competition environment  
+- Includes waypoint zones, buoy obstacles, hopping section, and docking area  
 
-이후 위험=0, 안전=1로 리스트 내 각 값을 치환하고 모든 0 값의 좌우 5개(임의)의 값도 주행 시 배의 폭을 고려해 모두 0으로 바꾼다. 마지막으로 남은 1 값들의 인덱스 중 목표로 하는 GPS 지점으로의 각도와 가장 절댓값이 가까운 각도를 선택한다.
-
-**첫 번째 웨이포인트에 도달**한다면, IMU를 x축 기준 우회전 45°정도의 각도를 따라가도록 한다. (선체의 좌측범위, 카메라 인식 범위에 보라색 부표가 인식되면 호핑모드로 들어가기 위해) 이후 부표를 인식하거나 or 3초 이상 시간이 지나면 루프를 탈출해 호핑 모드로 진입한다.
-
----
-
-### 2코스 알고리즘
-![2코스 알고리즘 시각화](./images/image03.png)
-
-이때 카메라와 라이다 데이터를 **캘리브레이션**시켜야 한다. 카메라가 선체의 좌측 90°(-90°)를 바라보고 있고, 라이다는 전방 180°를 인식하기 때문의 교집합의 정면 0°~ 좌측 90°를 사용한다. 카메라에서 인식된 객체가 카메라의 화면 중앙에서부터 떨어진 픽셀로부터 라이다에서 인식된 부표가 좌측 90°에서 떨어진 각도를 동일화한다. 이후 배 기준 –90°~-180°사이 카메라 데이터를 사용하고 호핑 알고리즘은 **라인 트레이싱 원리**를 적용한다.
-
-1. **IMU 135°**를 따라가다가 부표가 인식되면 해당 부표의 중앙이 배의 –90°에 오도록 조향한다.
-2. 부표의 중앙이 배의 **–90°에 위치하면 직진**한다.
-3. 부표의 중앙이 **–110°(임의)에 위치하면 좌회전 30°(임의)**를 명령한다. (쓰러스터 60°)
-
-부표의 오른쪽에서 한 바퀴 도는 것을 가정하기 때문에 IMU 각도가 0°를 두 번 지날 때 해당 루프를 탈출한다. 이후 IMU –90°를 따라서 카메라에 목표 객체가 인식될 때까지 직진한다. (카메라 정확도로 미루어 보아 예외 처리 필요X) 이후 인식되면 해당 객체의 각도가 선체의 –90°(카메라의 중앙)에 위치할 때까지 직진하고, LED를 해당 색깔로 점등하면서 목표 IMU 각도가 –90°를 따라서 두 번째 웨이포인트(객체 인식 갈림길을 나와서 가운데 지점, 범위는 3개의 길 모두 포함되도록)에 도달할 때까지 직진한다.
+<img width="712" height="336" alt="image" src="https://github.com/user-attachments/assets/5e95a6dc-3ed7-46eb-a2af-65c2fd03a18e" />
 
 ---
 
-### 3코스 알고리즘
-![3코스 알고리즘 시각화](./images/image04.png)
-
-직진 후 카메라 off. 라이다와 IMU만으로 도킹 지점까지 이동한다. 1코스와 유사하지만 GPS 목표 지점을 기본으로 따라가는 것이 아니라 전방 180°방향의 라이다 데이터 중에 가장 먼 거리값의 각도를 따라가도록 한다. 이때 매 프레임마다 서보모터의 목표 각도 결정은 다음의 순서를 따른다.
-
-1. 배의 IMU 각도 0°~ -180°사이의 각도(3코스 진행방향의 전방 180°)와 라이다 전방 180°각도의 교집합 리스트를 구한다.
-2. 그중 라이다 데이터에서 가장 먼 거리값이 들어오는 각도를 찾는다.
-3. 해당 각도의 거리값이 0.3m(임의) 이하로 들어오면 정지.
-
-이때 라이다는 전방 180도 범위의 데이터를 선택해 180등분하고 한 등분 내의 데이터들 평균값을 1°에 할당시켜 총 180개 거리값 리스트를 다룬다(단위: m). 그렇다면 항상 모퉁이 부분 혹은 코너의 가장자리 부분으로 목표 지점이 고정되게 되고, 이때 자연스럽게 벽은 피하면서 가장 열려있는 곳으로 주행할 수 있다. 선회 반경은 쓰러스터 출력을 조절함으로써 제어할 수 있다. 거리값이 0.3m이하로 들어오는 조건은 3코스가 시작할 때부터 항상 적용된다(주행 중엔 해당 조건을 만족하는 경우가 없을 것이므로).
-
-위 알고리즘(매 라이다 센서 콜백 프레임마다 가장 먼 거리의 각도를 찾아가는 형태)이 가장 단순한 형태이지만 필요시 1코스의 장애물 처리 과정 or 선회 반경을 고려한 안전각도 설정 등을 추가 가능.
+# 📍 Course-Specific Algorithms
 
 ---
 
-## 🏆 경기 규칙 및 패널티
-* **공통**: 벽 또는 부표 충돌 시 각 구간별 **+10초** 패널티 부여.
-* **시간 제한**: 
-    * 1코스: 3분 이내 통과 못 할 경우 탈락.
-    * 2코스: 2분 이내 통과 못 할 경우 탈락.
-    * 3코스: 5분 이내 통과 못 할 경우 탈락.
-* **추가 점수**: 객체 인식 성공 시 **+30점**, 도킹 성공 시 **+50점**.
+# 🥇 Course 1 – GPS-Based Navigation with LiDAR Obstacle Avoidance
+
+## 📡 Sensor Initialization
+All sensors (LiDAR, IMU, GPS, Camera) are activated and continuously subscribed via ROS 2 callbacks from system startup.
+
+At every control frame, the **servo target angle** is determined according to the following priority:
+
+---
+
+## 🎯 Steering Decision Priority
+
+### 1️⃣ Primary: GPS Heading Tracking
+The vessel follows the heading angle toward the target GPS waypoint:
+- First waypoint  
+- After passing all buoy obstacles  
+- Entry point before the purple buoy (hopping section)
+
+---
+
+### 2️⃣ Secondary: LiDAR-Based Obstacle Avoidance
+
+If LiDAR detects an obstacle within a predefined safety distance:
+
+1. Select front **180° LiDAR scan data**
+2. Divide into **180 angular bins (1° resolution)**
+3. Average values inside each bin → produce a 180-element distance array (unit: meters)
+
+Each distance value is mapped to a risk score using an exponential function
+
+- Closer distance → Higher risk (0–100 scale)
+- Risk above threshold → Marked as **Danger (0)**
+- Otherwise → **Safe (1)**
+
+### 🚧 Vessel Width Compensation
+For every detected danger index:
+- Extend danger marking to ±5 neighboring indices
+- Ensures collision-free clearance considering vessel width
+
+### ✅ Final Steering Selection
+Among all remaining safe angles:
+- Select the angle closest to the GPS target heading.
+
+---
+
+## 🔄 Transition to Hopping Mode
+
+Upon reaching the first waypoint:
+
+- IMU heading is adjusted to approximately **+45° starboard turn**
+- Purpose: Bring purple buoy into camera’s left field of view
+- If buoy detected **or 3 seconds elapsed**, transition to Course 2
+
+---
+
+# 🥈 Course 2 – Vision-LiDAR Fusion & Hopping Algorithm
+
+## 🎥 Sensor Calibration
+
+- Camera faces **-90° (port side)**
+- LiDAR scans **front 180°**
+- Overlapping usable range: **0° to -90°**
+
+Pixel offset from camera center is converted into angular displacement.
+This is aligned with LiDAR angular measurements.
+
+---
+
+## 🔁 Hopping Control Logic (Line-Tracing Principle)
+
+1. Follow IMU heading ≈ **135°**
+2. When buoy detected:
+   - Adjust steering so buoy center aligns with **-90° vessel heading**
+3. If buoy center = -90° → Move straight
+4. If buoy center = -110° (example threshold):
+   - Command 30° port turn (thruster 60%)
+
+Since vessel circles buoy from right side:
+- Exit loop after IMU heading crosses 0° twice
+
+---
+
+## 🎯 Target Object Recognition
+
+After loop exit:
+
+- Follow IMU -90°
+- Move straight until camera detects target object
+- Align object center with camera center (-90° vessel heading)
+- Activate LED corresponding to object color
+- Continue to second waypoint (junction center)
+
+---
+
+# 🥉 Course 3 – LiDAR-Based Free-Space Navigation (Docking)
+
+Camera is disabled.
+Navigation relies on **LiDAR + IMU only**.
+
+Unlike Course 1:
+- No GPS heading tracking
+- Follow the direction of **maximum LiDAR distance**
+
+---
+
+## 📐 Steering Decision Logic
+
+At each LiDAR callback frame:
+
+1. Compute intersection between:
+   - IMU heading range (0° to -180°)
+   - LiDAR front 180° data
+
+2. Identify angle with **maximum distance**
+
+3. If maximum distance ≤ 0.3 m:
+   - Stop immediately
+
+---
+
+## 📊 LiDAR Processing
+
+- Front 180° divided into 180 bins
+- Averaged per 1°
+- Produces 180-element distance list
+
+Selecting the maximum-distance angle naturally:
+- Guides vessel toward open space
+- Avoids walls
+- Handles corner navigation implicitly
+
+Turning radius is controlled via thruster output modulation.
+
+The stopping threshold (0.3 m) remains active throughout Course 3.
+
+---
+
+## 🔧 Algorithm Extensibility
+
+Although the farthest-distance strategy is the simplest implementation, the following can be incorporated:
+
+- Course 1–style obstacle risk evaluation
+- Adaptive safety angle generation
+- Turning radius–aware safe region selection
+
+---
+
